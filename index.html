@@ -255,6 +255,28 @@
   .pie-legend-body{flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;}
   .pie-legend-name{font-size:13px; font-weight:600; color:var(--ink);}
   .pie-legend-value{font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .pie-legend-trend{display:flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600; margin-top:2px; color:var(--ink-2); font-variant-numeric:tabular-nums;}
+  .pie-legend-trend svg{width:9px; height:9px; flex:none;}
+  .pie-legend-trend .vs{color:var(--muted); font-weight:500;}
+  .pie-legend-trend.good{color:var(--up-good);}
+  .pie-legend-trend.bad{color:var(--down-bad);}
+
+  /* ---------- variante sem gráfico: painel só com o quadro de
+     destaques/variações — cards por empresa e a rosca ficam ocultos,
+     os elementos continuam no DOM (o JS que os atualiza não muda) ---------- */
+  .panel-list-only .pie-flex{display:none;}
+  .panel-list-only .sub{display:none;}
+  .panel-list-only .highlights-box{margin-top:14px; padding-top:0; border-top:none;}
+
+  /* ---------- highlights automáticos (texto com insights calculados a
+     partir dos dados do mês atual, independente dos filtros do topo) ---------- */
+  .highlights-box{margin-top:18px; padding-top:16px; border-top:1px solid var(--border-2);}
+  .highlights-title{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-2); margin-bottom:10px;}
+  .highlights-list{margin:0; padding-left:18px; display:flex; flex-direction:column; gap:8px;}
+  .highlights-list li{font-size:13px; line-height:1.55; color:var(--ink-2);}
+  .highlights-list li b{color:var(--ink); font-weight:700;}
+  .highlights-list li b.hl-good{color:var(--up-good);}
+  .highlights-list li b.hl-bad{color:var(--down-bad);}
 
 
   /* ---------- evolution / line chart ---------- */
@@ -376,19 +398,12 @@
   <div class="kpi">
     <div class="label">Em aberto</div>
     <div class="value num" id="kpiAbertoValue">—</div>
-    <div class="kpi-meta">
-      <span class="chip" id="kpiAbertoPct">—</span>
-    </div>
     <div class="delta" id="kpiAbertoDelta"></div>
   </div>
   <div class="kpi">
     <div class="label">Acordo/Solicitações</div>
     <div class="value num" id="kpiAcordoValue">—</div>
-    <div class="kpi-meta">
-      <span class="chip" id="kpiAcordoPct">—</span>
-    </div>
     <div class="delta" id="kpiAcordoDelta"></div>
-    <div class="kpi-sub" id="kpiAcordoPeso"></div>
   </div>
   <div class="kpi">
     <div class="label">Recuperado do mês</div>
@@ -450,8 +465,8 @@
     </div>
   </div>
 
-  <div class="panel panel-pie">
-    <h2>Acordo/Solicitações por empresa</h2>
+  <div class="panel panel-pie panel-list-only">
+    <h2>Highlights</h2>
     <p class="sub" id="acordoSub">Valor em acordo/cessão e % já negociado sobre o valor em aberto</p>
 
     <div class="pie-flex">
@@ -459,6 +474,16 @@
         <svg id="acordoPie" viewBox="0 0 220 220" class="pie-svg"></svg>
       </div>
       <div class="pie-legend" id="acordoPieLegend"></div>
+    </div>
+
+    <div class="highlights-box">
+      <ul class="highlights-list">
+        <li id="hl1"></li>
+        <li id="hl2"></li>
+        <li id="hl3"></li>
+        <li id="hl4"></li>
+        <li id="hl5"></li>
+      </ul>
     </div>
   </div>
 </div>
@@ -478,7 +503,7 @@
   // primeiro mês disponível na base (a planilha tem 2025 e 2026); o último
   // mês é sempre o mês corrente, calculado a partir da data real — assim o
   // filtro se estende sozinho a cada novo mês, sem precisar editar o código.
-  var PERIOD_START_YEAR = 2025, PERIOD_START_MONTH = 1;
+  var PERIOD_START_YEAR = 2026, PERIOD_START_MONTH = 1;
 
   function buildPeriods(){
     var now = new Date();
@@ -625,6 +650,102 @@
     el.innerHTML = arrowSVG(up) + ' ' + fmtBRL(Math.abs(diff)) + ' <span class="vs">(' + (up?'+':'-') + fmtPct(pct) + ') vs. ' + prevLabel + '</span>';
   }
 
+  // versão compacta do highlight de variação, usada nas legendas de pizza
+  // (ex.: "Acordo/Solicitações por empresa") — mesma lógica do
+  // renderCurrencyDelta acima, mas escrevendo direto num elemento (não por
+  // id) e com texto mais curto pra caber na legenda
+  function renderMiniDelta(el, curVal, prevVal, prevLabel, multiNote){
+    if(!el) return;
+    if(multiNote){
+      el.className = 'pie-legend-trend';
+      el.innerHTML = '<span class="vs">' + multiNote + '</span>';
+      return;
+    }
+    if(prevVal === null || prevVal === undefined){
+      el.className = 'pie-legend-trend';
+      el.innerHTML = '<span class="vs">sem mês anterior</span>';
+      return;
+    }
+    var diff = curVal - prevVal;
+    var pct = prevVal !== 0 ? Math.abs(diff / prevVal * 100) : 0;
+    var up = diff > 0;
+    el.className = 'pie-legend-trend';
+    if(Math.abs(diff) < 0.5){
+      el.innerHTML = '<span class="vs">estável vs. ' + prevLabel + '</span>';
+      return;
+    }
+    el.innerHTML = arrowSVG(up) + ' ' + fmtPct(pct) + ' <span class="vs">vs. ' + prevLabel + '</span>';
+  }
+
+  function fmtPP(v){
+    return Math.abs(v).toFixed(1).replace('.', ',') + ' p.p';
+  }
+
+  // ---- highlights automáticos do quadro "Acordo/Solicitações por
+  // empresa": sempre sobre o mês corrente (o último de PERIODS) e todas as
+  // empresas, independente dos filtros de período/empresa do topo do
+  // painel — é um retrato fixo da situação atual, não uma view filtrável ----
+  function updateHighlights(){
+    var curMonth = PERIODS[PERIODS.length - 1];
+    var allCo = new Set(COMPANIES);
+    var aggNow = computeAggregate(new Set([curMonth]), allCo);
+    var inadNowPct = aggNow.previsao_total > 0
+      ? ((aggNow.aberto_total + (abertoOnly ? 0 : aggNow.acordo_total)) / aggNow.previsao_total) * 100
+      : 0;
+
+    document.getElementById('hl1').innerHTML =
+      'A inadimplência atual representa <b>' + fmtPct(inadNowPct) + '</b> da previsão.';
+
+    var idx = PERIODS.indexOf(curMonth);
+    var hl2 = document.getElementById('hl2');
+    if(idx >= 3){
+      var month3Ago = PERIODS[idx - 3];
+      var agg3Ago = computeAggregate(new Set([month3Ago]), allCo);
+      var inad3AgoPct = agg3Ago.previsao_total > 0
+        ? ((agg3Ago.aberto_total + (abertoOnly ? 0 : agg3Ago.acordo_total)) / agg3Ago.previsao_total) * 100
+        : 0;
+      var diffPP = inadNowPct - inad3AgoPct;
+      if(Math.abs(diffPP) < 0.05){
+        hl2.innerHTML = 'Comparando com os últimos 3 meses (' + PERIOD_META[month3Ago].short + '), a inadimplência está <b>estável</b>.';
+      } else {
+        var up = diffPP > 0;
+        var dirWord = up ? 'aumento' : 'redução';
+        var dirCls = up ? 'hl-bad' : 'hl-good';
+        hl2.innerHTML = 'Comparando com os últimos 3 meses (' + PERIOD_META[month3Ago].short + '), houve <b class="' + dirCls + '">' + dirWord + '</b> de <b class="' + dirCls + '">' + fmtPP(diffPP) + '</b>.';
+      }
+    } else {
+      hl2.innerHTML = 'Ainda não há histórico de 3 meses suficiente para essa comparação.';
+    }
+
+    var perCo = {};
+    COMPANIES.forEach(function(c){ perCo[c] = aggNow.companies[c]; });
+
+    // maior percentual do total em aberto
+    var abertoTotal = COMPANIES.reduce(function(s, c){ return s + perCo[c].aberto; }, 0);
+    var worstCo = null, worstShare = -1;
+    COMPANIES.forEach(function(c){
+      var share = abertoTotal > 0 ? perCo[c].aberto / abertoTotal * 100 : 0;
+      if(share > worstShare){ worstShare = share; worstCo = c; }
+    });
+    document.getElementById('hl3').innerHTML = (abertoTotal > 0 && worstCo)
+      ? 'Necessário atenção com os valores em aberto da <b>' + worstCo + '</b>, que neste momento tem o maior percentual (<b>' + fmtPct(worstShare) + '</b>) do total em aberto.'
+      : 'Nenhuma empresa com valores em aberto em ' + PERIOD_META[curMonth].lower + '.';
+
+    // maior recuperação
+    var bestRecCo = null, bestRec = -1;
+    COMPANIES.forEach(function(c){ if(perCo[c].recuperado > bestRec){ bestRec = perCo[c].recuperado; bestRecCo = c; } });
+    document.getElementById('hl4').innerHTML = (bestRec > 0 && bestRecCo)
+      ? 'A maior recuperação de valores em aberto ocorreu na <b>' + bestRecCo + '</b>, com <b>' + fmtBRL2(bestRec) + '</b> em ' + PERIOD_META[curMonth].lower + '.'
+      : 'Nenhuma recuperação de valores em aberto registrada em ' + PERIOD_META[curMonth].lower + '.';
+
+    // maior valor de acordo/solicitações mês
+    var bestAmCo = null, bestAm = -1;
+    COMPANIES.forEach(function(c){ if(perCo[c].acordoMes > bestAm){ bestAm = perCo[c].acordoMes; bestAmCo = c; } });
+    document.getElementById('hl5').innerHTML = (bestAm > 0 && bestAmCo)
+      ? 'A maior quantidade em valores de acordo/solicitações mês ocorreu na <b>' + bestAmCo + '</b>, com <b>' + fmtBRL2(bestAm) + '</b> em ' + PERIOD_META[curMonth].lower + '.'
+      : 'Nenhum valor de acordo/solicitações mês registrado em ' + PERIOD_META[curMonth].lower + '.';
+  }
+
   // ---- company filter ----
   var cfChips = Array.prototype.slice.call(document.querySelectorAll('#companyFilter .cf-chip'));
   var selectedCompanies = new Set(COMPANIES);
@@ -688,7 +809,7 @@
 
   // constrói um donut + legenda reutilizável (usado tanto para "Inadimplência
   // por empresa" quanto para "Em acordo/cessão por empresa")
-  function buildPieChart(svgId, legendId, tipHtmlFn){
+  function buildPieChart(svgId, legendId, tipHtmlFn, withTrend){
     var svg = document.getElementById(svgId);
     while(svg.firstChild){ svg.removeChild(svg.firstChild); }
 
@@ -734,9 +855,15 @@
       var valueEl = document.createElement('div');
       valueEl.className = 'pie-legend-value';
       body.appendChild(nameEl); body.appendChild(valueEl);
+      var trendEl = null;
+      if(withTrend){
+        trendEl = document.createElement('div');
+        trendEl.className = 'pie-legend-trend';
+        body.appendChild(trendEl);
+      }
       row.appendChild(dot); row.appendChild(body);
       legendEl.appendChild(row);
-      legendRows[c] = {row: row, value: valueEl};
+      legendRows[c] = {row: row, value: valueEl, trend: trendEl};
 
       function highlight(on){
         COMPANIES.forEach(function(other){
@@ -1124,14 +1251,10 @@
     }
 
     document.getElementById('kpiAbertoValue').textContent = fmtBRL(cur.aberto_total);
-    document.getElementById('kpiAbertoPct').textContent = (cur.previsao_total > 0 ? fmtPct(cur.aberto_total/cur.previsao_total*100) : '—') + ' da previsão de ' + monthScopeShort;
     renderCurrencyDelta('kpiAbertoDelta', cur.aberto_total, prev ? prev.aberto_total : null, prevLabel, true, multiNote);
 
     document.getElementById('kpiAcordoValue').textContent = fmtBRL(cur.acordo_total);
-    document.getElementById('kpiAcordoPct').textContent = (cur.previsao_total > 0 ? fmtPct(cur.acordo_total/cur.previsao_total*100) : '—') + ' da previsão de ' + monthScopeShort;
     renderCurrencyDelta('kpiAcordoDelta', cur.acordo_total, prev ? prev.acordo_total : null, prevLabel, null, multiNote);
-    var peso = cur.aberto_total > 0 ? (cur.acordo_total/cur.aberto_total*100) : 0;
-    document.getElementById('kpiAcordoPeso').innerHTML = '<b>' + fmtPct(peso) + '</b> do valor em aberto já negociado';
 
     document.getElementById('kpiRecuperadoValue').textContent = fmtBRL(cur.recuperado);
     renderCurrencyDelta('kpiRecuperadoDelta', cur.recuperado, prev ? prev.recuperado : null, prevLabel, false, multiNote);
@@ -1331,6 +1454,8 @@
       amEl.val.textContent = isSel ? fmtMil(monthAcordoMes[m]) : '';
       amEl.grp.classList.toggle('active', isSel);
     });
+
+    updateHighlights();
   }
 
   // ---- atualização de dados: busca a aba "Faturamento" publicada como CSV
