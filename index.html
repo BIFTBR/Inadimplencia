@@ -280,10 +280,12 @@
   .month-bars-grouped .b{width:100%; border-radius:3px 3px 0 0; opacity:.55; transition:height .25s ease, opacity .15s; margin-top:2px;}
   .month-bars-grouped .b.aberto{background:var(--c-franq);}
   .month-bars-grouped .b.recuperado{background:var(--c-opropria);}
+  .month-bars-grouped .b.acordo-mes{background:var(--s-warning);}
   .month-bars-grouped .grp.active .b{opacity:1;}
   .month-bars-grouped .grp.active .val{color:var(--ink); font-weight:800;}
   .month-bars-grouped .m{font-size:10.5px; color:var(--muted); font-weight:600;}
   .month-bars-grouped .grp.active .m{color:var(--ink); font-weight:700;}
+  .month-bars-grouped.is-single .bar-col{max-width:30px;}
 
   /* ---------- update control ---------- */
   .update-control{position:relative; display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex:none;}
@@ -415,6 +417,26 @@
   </div>
 </div>
 
+<div class="panel evo-panel">
+  <h2>Evolução mensal — Acordo/Solicitações</h2>
+  <div class="evo-flex">
+    <div class="evo-side">
+      <div class="evo-legend">
+        <span class="leg-item"><i style="background:var(--s-warning)"></i>Acordo/Solicitações ($)</span>
+      </div>
+      <div class="month-bars-grouped is-single" id="acordoMesMonthBars"></div>
+    </div>
+    <div class="evo-chart">
+      <div class="pie-flex">
+        <div class="pie-chart-wrap">
+          <svg id="acordoMesPie" viewBox="0 0 220 220" class="pie-svg"></svg>
+        </div>
+        <div class="pie-legend" id="acordoMesPieLegend"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="grid2">
   <div class="panel panel-pie">
     <h2>Inadimplência por empresa</h2>
@@ -495,16 +517,17 @@
   var AGING_KEYS = ['0-30','31-60','61-90','90+'];
 
   // ---- aggregate data across a chosen set of months AND a chosen set of companies ----
-  // regra: "Em aberto" e "Em acordo/cessão" são saldos (estoque), nunca soma.
-  // Com um único mês selecionado, mostram o saldo daquele mês; com vários
-  // meses selecionados, mostram sempre o saldo do mês em andamento (o mês
-  // corrente real), não o último da seleção. "Previsão de faturamento" e
-  // "Recuperado" são fluxos — esses sim são somados ao longo dos meses
-  // selecionados.
+  // regra: "Em aberto" e "Acordo/Solicitações" (saldo) são saldos (estoque),
+  // nunca soma. Com um único mês selecionado, mostram o saldo daquele mês;
+  // com vários meses selecionados, mostram sempre o saldo do mês em
+  // andamento (o mês corrente real), não o último da seleção. "Previsão de
+  // faturamento", "Recuperado" e "Acordo/Solicitações Mês" (fluxo, usado na
+  // evolução mensal e no pizza por empresa daquele gráfico) são fluxos —
+  // esses sim são somados ao longo dos meses selecionados.
   function computeAggregate(monthSet, companySet){
-    var out = {previsao_total:0, aberto_total:0, acordo_total:0, recuperado:0, faturamento_realizado:0, companies:{}, aging:{'0-30':0,'31-60':0,'61-90':0,'90+':0}};
+    var out = {previsao_total:0, aberto_total:0, acordo_total:0, recuperado:0, acordoMes_total:0, faturamento_realizado:0, companies:{}, aging:{'0-30':0,'31-60':0,'61-90':0,'90+':0}};
     var perCo = {};
-    COMPANIES.forEach(function(c){ perCo[c] = {previsao:0, aberto:0, acordo:0, recuperado:0, aging:{'0-30':0,'31-60':0,'61-90':0,'90+':0}}; });
+    COMPANIES.forEach(function(c){ perCo[c] = {previsao:0, aberto:0, acordo:0, recuperado:0, acordoMes:0, aging:{'0-30':0,'31-60':0,'61-90':0,'90+':0}}; });
 
     var monthList = PERIODS.filter(function(k){ return monthSet.has(k); });
     var lastMonth = monthList.length ? monthList[monthList.length - 1] : null;
@@ -519,13 +542,14 @@
         var cd = m.companies[c];
         out.previsao_total += cd.previsao;
         out.recuperado += cd.recuperado;
+        out.acordoMes_total += (cd.acordoMes || 0);
         if(cd.faturamento_realizado !== undefined){ out.faturamento_realizado += cd.faturamento_realizado; }
         var p = perCo[c];
-        p.previsao += cd.previsao; p.recuperado += cd.recuperado;
+        p.previsao += cd.previsao; p.recuperado += cd.recuperado; p.acordoMes += (cd.acordoMes || 0);
       });
     });
 
-    // estoque: "em aberto" e "em acordo/cessão" usam o mês em andamento
+    // estoque: "em aberto" e "acordo/solicitações" usam o mês em andamento
     // quando há mais de um mês selecionado (senão o único mês selecionado)
     if(stockMonth){
       var sm = DATA[stockMonth];
@@ -543,7 +567,7 @@
     COMPANIES.forEach(function(c){
       if(!companySet.has(c)) return;
       var p = perCo[c];
-      out.companies[c] = {previsao:p.previsao, aberto:p.aberto, adimplencia: p.previsao > 0 ? (1 - p.aberto/p.previsao) : 1, acordo:p.acordo, recuperado:p.recuperado, aging:p.aging};
+      out.companies[c] = {previsao:p.previsao, aberto:p.aberto, adimplencia: p.previsao > 0 ? (1 - p.aberto/p.previsao) : 1, acordo:p.acordo, recuperado:p.recuperado, acordoMes:p.acordoMes, aging:p.aging};
     });
     return out;
   }
@@ -778,6 +802,23 @@
   var acordoPieEmptyPath = acordoPieHandle.emptyPath, acordoPieSlices = acordoPieHandle.slices,
       acordoPieLabels = acordoPieHandle.labels, acordoPieLegendRows = acordoPieHandle.legendRows;
 
+  // ---- pizza "Evolução mensal — Acordo/Solicitações": composição por
+  // empresa do fluxo de Acordo/Solicitações Mês somado ao longo de TODOS
+  // os meses mostrados no gráfico de colunas ao lado (não é saldo, e não
+  // segue o filtro de período do topo — é sempre a somatória do gráfico
+  // de colunas, ver lastAcordoMesYearAgg em renderAll) ----
+  var acordoMesPieHandle = buildPieChart('acordoMesPie', 'acordoMesPieLegend', function(c){
+    var cd = lastAcordoMesYearAgg.companies[c];
+    var totalAcordoMes = COMPANIES.reduce(function(s, k){
+      return selectedCompanies.has(k) ? s + lastAcordoMesYearAgg.companies[k].acordoMes : s;
+    }, 0);
+    var share = totalAcordoMes > 0 ? cd.acordoMes/totalAcordoMes*100 : 0;
+    return c + '<br>Acordo/Solicitações: ' + fmtBRL2(cd.acordoMes) +
+      '<br>' + fmtPct(share) + ' do total do gráfico';
+  });
+  var acordoMesPieEmptyPath = acordoMesPieHandle.emptyPath, acordoMesPieSlices = acordoMesPieHandle.slices,
+      acordoMesPieLabels = acordoMesPieHandle.labels, acordoMesPieLegendRows = acordoMesPieHandle.legendRows;
+
   // ---- line chart (built once, values + highlight + scale updated per render) ----
   var svg = document.getElementById('lineChart');
   while(svg.firstChild){ svg.removeChild(svg.firstChild); }
@@ -917,6 +958,35 @@
     monthBarEls[m] = {grp:grp, barAberto:barAberto, valAberto:valAberto, barRec:barRec, valRec:valRec, abertoLabel:'', recuperadoLabel:''};
   });
 
+  // ---- month bars: coluna única de Acordo/Solicitações por mês (fluxo,
+  // "Acordo/Solicitações Mês"), construída uma vez e atualizada a cada render ----
+  var amMbg = document.getElementById('acordoMesMonthBars');
+  amMbg.innerHTML = '';
+  var acordoMesBarEls = {};
+  EVO_MONTHS.forEach(function(m){
+    var grp = document.createElement('div'); grp.className = 'grp'; grp.setAttribute('data-month', m);
+    var barsRow = document.createElement('div'); barsRow.className = 'bars-row';
+
+    var col = document.createElement('div'); col.className = 'bar-col';
+    var val = document.createElement('div'); val.className = 'val';
+    var bar = document.createElement('div'); bar.className = 'b acordo-mes';
+    col.appendChild(val); col.appendChild(bar);
+
+    barsRow.appendChild(col);
+    var lbl = document.createElement('div'); lbl.className='m'; lbl.textContent = PERIOD_META[m].name.slice(0,3);
+    grp.appendChild(barsRow); grp.appendChild(lbl);
+
+    grp.addEventListener('click', function(){ toggleMonth(m); });
+    grp.addEventListener('mousemove', function(e){
+      var rect = grp.getBoundingClientRect();
+      var els = acordoMesBarEls[m];
+      showTip(rect.width/2, 0, PERIOD_META[m].short + '<br>Acordo/Solicitações: ' + els.label, grp);
+    });
+    grp.addEventListener('mouseleave', hideTip);
+    amMbg.appendChild(grp);
+    acordoMesBarEls[m] = {grp:grp, bar:bar, val:val, label:''};
+  });
+
   // ---- month filter: lista suspensa com checkboxes, agrupada por ano,
   // gerada dinamicamente a partir de PERIODS (cobre todos os anos da base) ----
   var monthDropdown = document.getElementById('monthDropdown');
@@ -996,6 +1066,7 @@
 
   var selectedMonths = new Set([PERIODS[PERIODS.length - 1]]);
   var lastAggregate = null;
+  var lastAcordoMesYearAgg = null; // soma de Acordo/Solicitações Mês por empresa ao longo de todos os meses do gráfico "Evolução mensal", independente do filtro de período no topo
 
   // seleção múltipla: marcar/desmarcar adiciona ou remove o mês da seleção;
   // sempre mantém pelo menos um mês selecionado
@@ -1150,7 +1221,50 @@
       acordoPieLegendRows[c].value.textContent = fmtBRL2(acordoVal);
     });
 
-    var monthInad = {}, monthAberto = {}, maxAberto = 1, monthRecuperado = {}, maxRecuperado = 1, monthRecuperadoPct = {};
+    // ---- donut: composição do fluxo "Acordo/Solicitações Mês" entre as
+    // empresas selecionadas — usa sempre a somatória de TODOS os meses do
+    // gráfico de colunas ao lado (EVO_MONTHS), não o filtro de período do
+    // topo do painel ----
+    var acordoMesYearAgg = computeAggregate(new Set(EVO_MONTHS), selectedCompanies);
+    lastAcordoMesYearAgg = acordoMesYearAgg;
+
+    var acordoMesPieVals = {}, acordoMesPieTotal = 0;
+    COMPANIES.forEach(function(c){
+      if(!selectedCompanies.has(c)) return;
+      acordoMesPieVals[c] = acordoMesYearAgg.companies[c].acordoMes;
+      acordoMesPieTotal += acordoMesYearAgg.companies[c].acordoMes;
+    });
+    acordoMesPieEmptyPath.setAttribute('d', donutPath(0, 359.99));
+    acordoMesPieEmptyPath.style.display = acordoMesPieTotal > 0 ? 'none' : '';
+    var acordoMesPieAngle = 0;
+    COMPANIES.forEach(function(c){
+      var inFilter = selectedCompanies.has(c);
+      acordoMesPieLegendRows[c].row.classList.toggle('is-hidden', !inFilter);
+      if(!inFilter){ acordoMesPieSlices[c].style.display = 'none'; acordoMesPieLabels[c].style.display = 'none'; return; }
+      var acordoMesVal = acordoMesPieVals[c];
+      var share = acordoMesPieTotal > 0 ? acordoMesVal/acordoMesPieTotal*100 : 0;
+      var span = acordoMesPieTotal > 0 ? (acordoMesVal/acordoMesPieTotal*360) : 0;
+      if(acordoMesVal > 0){
+        acordoMesPieSlices[c].setAttribute('d', donutPath(acordoMesPieAngle, acordoMesPieAngle + Math.max(span, 0.01)));
+        acordoMesPieSlices[c].style.display = '';
+      } else {
+        acordoMesPieSlices[c].style.display = 'none';
+      }
+      var acordoMesMidAngle = acordoMesPieAngle + span/2;
+      acordoMesPieAngle += span;
+      if(acordoMesVal > 0 && span >= 16){
+        var amlp = pieXY(PIE_LABEL_R, acordoMesMidAngle);
+        acordoMesPieLabels[c].setAttribute('x', amlp.x);
+        acordoMesPieLabels[c].setAttribute('y', amlp.y);
+        acordoMesPieLabels[c].textContent = fmtPct(share);
+        acordoMesPieLabels[c].style.display = '';
+      } else {
+        acordoMesPieLabels[c].style.display = 'none';
+      }
+      acordoMesPieLegendRows[c].value.textContent = fmtBRL2(acordoMesVal);
+    });
+
+    var monthInad = {}, monthAberto = {}, maxAberto = 1, monthRecuperado = {}, maxRecuperado = 1, monthRecuperadoPct = {}, monthAcordoMes = {}, maxAcordoMes = 1;
     EVO_MONTHS.forEach(function(m){
       var agg = computeAggregate(new Set([m]), selectedCompanies);
       var inadTotal = agg.aberto_total + (abertoOnly ? 0 : agg.acordo_total);
@@ -1160,6 +1274,8 @@
       monthRecuperado[m] = agg.recuperado;
       if(agg.recuperado > maxRecuperado) maxRecuperado = agg.recuperado;
       monthRecuperadoPct[m] = agg.previsao_total > 0 ? (agg.recuperado/agg.previsao_total) * 100 : 0;
+      monthAcordoMes[m] = agg.acordoMes_total;
+      if(agg.acordoMes_total > maxAcordoMes) maxAcordoMes = agg.acordoMes_total;
     });
     var inadVals = EVO_MONTHS.map(function(m){ return monthInad[m]; }).concat(EVO_MONTHS.map(function(m){ return monthRecuperadoPct[m]; }));
     var rawMin = Math.min.apply(null, inadVals), rawMax = Math.max.apply(null, inadVals);
@@ -1206,6 +1322,14 @@
       mbEl.valRec.textContent = isSel ? fmtMil(monthRecuperado[m]) : '';
 
       mbEl.grp.classList.toggle('active', isSel);
+
+      var amEl = acordoMesBarEls[m];
+      var amBarMax = 160;
+      var amH = Math.max(6, Math.round(amBarMax * monthAcordoMes[m] / maxAcordoMes));
+      amEl.bar.style.height = amH + 'px';
+      amEl.label = fmtBRL(monthAcordoMes[m]);
+      amEl.val.textContent = isSel ? fmtMil(monthAcordoMes[m]) : '';
+      amEl.grp.classList.toggle('active', isSel);
     });
   }
 
@@ -1258,16 +1382,19 @@
 
   // a aba "Faturamento" da planilha traz blocos empilhados — Faturamento,
   // Recuperado, Inadimplência, Inadimplência Mês, Em aberto, Em acordo /
-  // cessão e Acordo/Solicitação Acumulada — cada um com uma linha por
-  // empresa e uma coluna por mês (MM/AAAA, agora cobrindo 2025 e 2026). O
-  // KPI "Em aberto" usa o bloco "Inadimplência Mês" quando ele existe na
-  // planilha, com "Em aberto" e "Inadimplência" como fallback para
-  // planilhas antigas. O KPI "Em acordo/cessão" usa o bloco "Acordo/
-  // Solicitação Acumulada" quando ele existe, com "Em acordo / cessão"
-  // como fallback. Os dois são saldos (estoque) — ver computeAggregate. O
-  // aging (0-30/31-60/...) só existe na aba detalhada "Base"; por isso a
+  // cessão, Acordo/Solicitação Acumulada e Acordo/Solicitações Mês — cada
+  // um com uma linha por empresa e uma coluna por mês (MM/AAAA, agora
+  // cobrindo 2025 e 2026). O KPI "Em aberto" usa o bloco "Inadimplência
+  // Mês" quando ele existe na planilha, com "Em aberto" e "Inadimplência"
+  // como fallback para planilhas antigas. O KPI "Acordo/Solicitações" usa
+  // o bloco "Acordo/Solicitação Acumulada" quando ele existe, com "Em
+  // acordo / cessão" como fallback — os dois são saldos (estoque), ver
+  // computeAggregate. Já o gráfico "Evolução mensal — Acordo/Solicitações"
+  // usa o bloco "Acordo/Solicitações Mês", que é um fluxo mensal (somado
+  // ao longo dos meses selecionados, igual previsão/recuperado). O aging
+  // (0-30/31-60/...) só existe na aba detalhada "Base"; por isso a
   // atualização automática fica com aging zerado.
-  var BLOCK_NAMES = ['Faturamento', 'Recuperado', 'Inadimplência', 'Inadimplência Mês', 'Em aberto', 'Em acordo / cessão', 'Acordo/Solicitação Acumulada'];
+  var BLOCK_NAMES = ['Faturamento', 'Recuperado', 'Inadimplência', 'Inadimplência Mês', 'Em aberto', 'Em acordo / cessão', 'Acordo/Solicitação Acumulada', 'Acordo/Solicitações Mês'];
 
   function parseSummaryCSV(text){
     var lines = text.replace(/\r\n/g,'\n').split('\n').filter(function(l){ return l.length > 0; });
@@ -1298,6 +1425,7 @@
     var blocks = parseSummaryCSV(csvText);
     var abertoBlock = blocks['Inadimplência Mês'] || blocks['Em aberto'] || blocks['Inadimplência'];
     var acordoBlock = blocks['Acordo/Solicitação Acumulada'] || blocks['Em acordo / cessão'];
+    var acordoMesBlock = blocks['Acordo/Solicitações Mês'];
     var months = {};
     PERIODS.forEach(function(m, mi){
       var col = PERIOD_META[m].col;
@@ -1308,10 +1436,11 @@
         var aberto = valueFor(abertoBlock, col, c);
         var recuperado = valueFor(blocks['Recuperado'], col, c);
         var acordo = valueFor(acordoBlock, col, c);
+        var acordoMes = valueFor(acordoMesBlock, col, c);
         var entry = {
           previsao: previsao, aberto: aberto,
           adimplencia: previsao > 0 ? (1 - aberto/previsao) : 1,
-          acordo: acordo, recuperado: recuperado,
+          acordo: acordo, recuperado: recuperado, acordoMes: acordoMes,
           aging: {'0-30':0,'31-60':0,'61-90':0,'90+':0}
         };
         if(!isOngoing){ entry.faturamento_realizado = previsao; }
@@ -1377,4 +1506,3 @@
 
 </body>
 </html>
-
