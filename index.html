@@ -1382,7 +1382,7 @@
 
   // a aba "Faturamento" da planilha traz blocos empilhados — Faturamento,
   // Recuperado, Inadimplência, Inadimplência Mês, Em aberto, Em acordo /
-  // cessão, Acordo/Solicitação Acumulada e Acordo/Solicitações Mês — cada
+  // cessão, Acordo/Solicitação Acumulada e Acordo/Solicitação Mês — cada
   // um com uma linha por empresa e uma coluna por mês (MM/AAAA, agora
   // cobrindo 2025 e 2026). O KPI "Em aberto" usa o bloco "Inadimplência
   // Mês" quando ele existe na planilha, com "Em aberto" e "Inadimplência"
@@ -1390,11 +1390,12 @@
   // o bloco "Acordo/Solicitação Acumulada" quando ele existe, com "Em
   // acordo / cessão" como fallback — os dois são saldos (estoque), ver
   // computeAggregate. Já o gráfico "Evolução mensal — Acordo/Solicitações"
-  // usa o bloco "Acordo/Solicitações Mês", que é um fluxo mensal (somado
-  // ao longo dos meses selecionados, igual previsão/recuperado). O aging
-  // (0-30/31-60/...) só existe na aba detalhada "Base"; por isso a
+  // usa o bloco "Acordo/Solicitação Mês" (aceita também o nome no plural,
+  // "Acordo/Solicitações Mês", como fallback), que é um fluxo mensal
+  // (somado ao longo dos meses selecionados, igual previsão/recuperado). O
+  // aging (0-30/31-60/...) só existe na aba detalhada "Base"; por isso a
   // atualização automática fica com aging zerado.
-  var BLOCK_NAMES = ['Faturamento', 'Recuperado', 'Inadimplência', 'Inadimplência Mês', 'Em aberto', 'Em acordo / cessão', 'Acordo/Solicitação Acumulada', 'Acordo/Solicitações Mês'];
+  var BLOCK_NAMES = ['Faturamento', 'Recuperado', 'Inadimplência', 'Inadimplência Mês', 'Em aberto', 'Em acordo / cessão', 'Acordo/Solicitação Acumulada', 'Acordo/Solicitação Mês', 'Acordo/Solicitações Mês'];
 
   function parseSummaryCSV(text){
     var lines = text.replace(/\r\n/g,'\n').split('\n').filter(function(l){ return l.length > 0; });
@@ -1425,7 +1426,7 @@
     var blocks = parseSummaryCSV(csvText);
     var abertoBlock = blocks['Inadimplência Mês'] || blocks['Em aberto'] || blocks['Inadimplência'];
     var acordoBlock = blocks['Acordo/Solicitação Acumulada'] || blocks['Em acordo / cessão'];
-    var acordoMesBlock = blocks['Acordo/Solicitações Mês'];
+    var acordoMesBlock = blocks['Acordo/Solicitação Mês'] || blocks['Acordo/Solicitações Mês'];
     var months = {};
     PERIODS.forEach(function(m, mi){
       var col = PERIOD_META[m].col;
